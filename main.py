@@ -1,4 +1,5 @@
 #%%
+# General Imports
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -8,14 +9,18 @@ from sklearn.model_selection import GridSearchCV
 from imblearn.over_sampling import SMOTE
 import ipywidgets as widgets
 from IPython.display import display
+from sklearn.model_selection import RandomizedSearchCV
 
 
+
+#%%
+# Read Spreadsheet and process
 df = pd.read_csv("healthcare-dataset-stroke-data.csv")
 
 # Fill missing values in the 'bmi' column with its mean
 df['bmi'].fillna(df['bmi'].mean(), inplace=True)
 
-
+# Convert categorical variables into numerical variables
 df['gender'] = df['gender'].replace({'Male':0,'Female':1,'Other':-1}).astype(np.uint8)
 df['Residence_type'] = df['Residence_type'].replace({'Rural':0,'Urban':1}).astype(np.uint8)
 df['work_type'] = df['work_type'].replace({'Private':0,'Self-employed':1,'Govt_job':2,'children':-1,'Never_worked':-2}).astype(np.uint8)
@@ -33,7 +38,17 @@ y = df['stroke']
 sm = SMOTE(random_state=42)
 X_resampled, y_resampled = sm.fit_resample(X, y)
 
-# Split the dataset into training and testing sets 
+#%%
+
+# RandomizedSearchCV is typically faster than GridSearchCV because it does not 
+# exhaustively search through all possible combinations of hyperparameters. 
+# Instead, it randomly samples a fixed number of combinations from the 
+# specified hyperparameter space.
+
+
+# Google colab is on the slower side, 
+# so we use a smaller number of iterations to get similar results and save time.
+# Split the dataset into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.2, random_state=42)
 
 # Define the hyperparameter grid
@@ -49,15 +64,15 @@ param_grid = {
 # Create a base Random Forest model
 base_rf = RandomForestClassifier(random_state=42)
 
-# Create the Grid Search object
-grid_search = GridSearchCV(estimator=base_rf, param_grid=param_grid, cv=5, n_jobs=-1, verbose=1)
+# Create the Randomized Search object
+random_search = RandomizedSearchCV(estimator=base_rf, param_distributions=param_grid, n_iter=20, cv=5, n_jobs=-1, verbose=1, random_state=42)
 
-# Fit the Grid Search object to the training data
-grid_search.fit(X_train, y_train)
+# Fit the Randomized Search object to the training data
+random_search.fit(X_train, y_train)
 
 # Get the best hyperparameters
-best_params = grid_search.best_params_
-print("Best hyperparameters found by Grid Search:")
+best_params = random_search.best_params_
+print("Best hyperparameters found by Randomized Search:")
 print(best_params)
 
 # Train a new Random Forest classifier using the best hyperparameters
@@ -70,6 +85,7 @@ print("Accuracy (best hyperparameters):", accuracy_score(y_test, y_pred))
 
 print("Classification Report (best hyperparameters):", classification_report(y_test, y_pred))
 
+# Calculate feature importances
 importances = best_rf.feature_importances_
 feature_importances = pd.DataFrame({'feature': X.columns, 'importance': importances})
 feature_importances = feature_importances.sort_values('importance', ascending=False)
@@ -112,9 +128,32 @@ corr_matrix = df.corr()
 plt.figure(figsize=(12, 10))
 sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', linewidths=0.5)
 plt.title('Correlation Matrix')
-plt.show()# %%
+plt.show()
 
-# %%
+#%%
+
+def process_user_input(patient):
+    # Perform data preprocessing on user input
+    patient_processed = pd.DataFrame([patient])
+
+    # Encode categorical variables
+    patient_processed['gender'] = patient_processed['gender'].replace({'Male': 0, 'Female': 1, 'Other': -1}).astype(np.uint8)
+    patient_processed['Residence_type'] = patient_processed['Residence_type'].replace({'Rural': 0, 'Urban': 1}).astype(np.uint8)
+    patient_processed['work_type'] = patient_processed['work_type'].replace(
+        {'Private': 0, 'Self-employed': 1, 'Govt_job': 2, 'children': -1, 'Never_worked': -2}).astype(np.uint8)
+
+    patient_processed = pd.get_dummies(patient_processed, columns=['ever_married', 'smoking_status'])
+
+    # Add missing columns (if any) and set their values to 0
+    missing_cols = set(X.columns) - set(patient_processed.columns)
+    for col in missing_cols:
+        patient_processed[col] = 0
+
+    # Reorder columns to match the original dataset
+    patient_processed = patient_processed[X.columns]
+
+    return patient_processed
+
 
 # Create input widgets for each feature
 gender_widget = widgets.Dropdown(options=['Male', 'Female', 'Other'], description='Gender:')
